@@ -1,0 +1,5 @@
+{
+  "name": "WealthLens - Asset Aggregator",
+  "description": "Upload screenshots of your bank and stock accounts to automatically aggregate, analyze, and visualize your total net worth and asset distribution.",
+  "requestFramePermissions": []
+}
