@@ -19,8 +19,9 @@ const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: s
 };
 
 export const analyzeFinancialScreenshots = async (files: File[]): Promise<AssetAnalysisResult> => {
+  // 这里的 process.env.API_KEY 由环境自动注入
   if (!process.env.API_KEY) {
-    throw new Error("API Key is missing.");
+    throw new Error("API Key 缺失。请确保在环境设置中配置了有效的 API_KEY。");
   }
 
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -32,23 +33,22 @@ export const analyzeFinancialScreenshots = async (files: File[]): Promise<AssetA
     任务要求：
     1. 提取资产信息，识别币种并统一折算为人民币 (CNY)。汇率参考：USD=7.25, HKD=0.93, JPY=0.048。
     2. 自动去重：识别重复的账号或余额。
-    3. 资产分类：
-       - 类型 (type): '现金与活期', '股票', '理财/基金', '黄金/贵金属', '虚拟货币', '其他'。
-       - 宏观类别 (macroCategory): 
-         * '流动性资产' (现金、活期、货币基金)
-         * '投资性资产' (股票、指数基金、混合基金)
-         * '风险性资产' (加密货币、高波动衍生品)
-         * '稳健型资产' (黄金、定期存款、债券、稳健型理财)
-    4. 深度分析：
-       - 整体分布分析 (distributionAnalysis): 分析当前的资产配置结构是否合理，流动性是否充足，风险是否过高。
-       - 投资建议 (investmentAdvice): 基于当前资产配置情况，给出具体的、可操作的优化建议（如：增加配置、分散风险、现金流管理等）。
+    3. 识别机构 (entity)：必须识别出该项资产所属的银行（如招商银行、工商银行）或券商（如中信证券、富途证券）。
+    4. 资产分类：
+       - 类型 (type): 严格匹配枚举值 ['现金与活期', '股票', '理财/基金', '黄金/贵金属', '虚拟货币', '其他']。
+       - 宏观类别 (macroCategory): 匹配 ['流动性资产', '投资性资产', '风险性资产', '稳健型资产']。
+    5. 风险量化分析：
+       - 计算前5大股票资产占总股票资产的比例 (stockConcentration)。
+       - 计算资产占比最高的一家机构的比例 (entityConcentration)。
+       - 计算现金及活期占总资产的比例 (cashRatio)。
+       - 识别风险点并生成风险提示列表 (riskAlerts)。
 
-    请使用简体中文回复，并严格遵守 JSON 格式。
+    请输出 JSON 格式，字段必须包含 id (随机字符串), timestamp (当前毫秒戳), totalNetWorthCNY, summary, distributionAnalysis, investmentAdvice, riskMetrics (对象), breakdown (数组)。
   `;
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3-pro-preview', 
       contents: {
         parts: [...imageParts, { text: prompt }]
       },
@@ -57,16 +57,29 @@ export const analyzeFinancialScreenshots = async (files: File[]): Promise<AssetA
         responseSchema: {
           type: Type.OBJECT,
           properties: {
+            id: { type: Type.STRING },
+            timestamp: { type: Type.NUMBER },
             totalNetWorthCNY: { type: Type.NUMBER },
             summary: { type: Type.STRING },
             distributionAnalysis: { type: Type.STRING },
             investmentAdvice: { type: Type.STRING },
+            riskMetrics: {
+              type: Type.OBJECT,
+              properties: {
+                stockConcentration: { type: Type.NUMBER },
+                entityConcentration: { type: Type.NUMBER },
+                cashRatio: { type: Type.NUMBER },
+                riskAlerts: { type: Type.ARRAY, items: { type: Type.STRING } }
+              },
+              required: ["stockConcentration", "entityConcentration", "cashRatio", "riskAlerts"]
+            },
             breakdown: {
               type: Type.ARRAY,
               items: {
                 type: Type.OBJECT,
                 properties: {
                   name: { type: Type.STRING },
+                  entity: { type: Type.STRING },
                   originalAmount: { type: Type.NUMBER },
                   currency: { type: Type.STRING },
                   convertedAmountCNY: { type: Type.NUMBER },
@@ -74,11 +87,11 @@ export const analyzeFinancialScreenshots = async (files: File[]): Promise<AssetA
                   macroCategory: { type: Type.STRING, enum: Object.values(MacroCategory) },
                   description: { type: Type.STRING }
                 },
-                required: ["name", "originalAmount", "currency", "convertedAmountCNY", "type", "macroCategory"]
+                required: ["name", "entity", "originalAmount", "currency", "convertedAmountCNY", "type", "macroCategory"]
               }
             }
           },
-          required: ["totalNetWorthCNY", "breakdown", "summary", "distributionAnalysis", "investmentAdvice"]
+          required: ["id", "timestamp", "totalNetWorthCNY", "breakdown", "summary", "distributionAnalysis", "investmentAdvice", "riskMetrics"]
         }
       }
     });
@@ -88,6 +101,6 @@ export const analyzeFinancialScreenshots = async (files: File[]): Promise<AssetA
     return JSON.parse(text) as AssetAnalysisResult;
   } catch (error) {
     console.error("Gemini Error:", error);
-    throw new Error("资产分析失败，请检查图片清晰度或重试。");
+    throw new Error("资产分析失败，请检查 API Key 是否有效，或截图是否包含清晰的金额。");
   }
 };

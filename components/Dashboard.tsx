@@ -1,222 +1,110 @@
 import React, { useMemo, useState } from 'react';
-import { AssetAnalysisResult, MacroCategory, AssetType } from '../types.ts';
+import { AssetAnalysisResult, MacroCategory, AssetType, AssetItem } from '../types.ts';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 interface DashboardProps {
   data: AssetAnalysisResult;
 }
 
-type Filter = {
-  type: 'macro' | 'detailed';
-  value: string;
-} | null;
-
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b'];
 const DARK_COLORS = ['#60a5fa', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#94a3b8'];
 
 export const Dashboard: React.FC<DashboardProps> = ({ data }) => {
-  const [activeFilter, setActiveFilter] = useState<Filter>(null);
-  
-  // 检查是否为暗黑模式
+  const [selectedEntity, setSelectedEntity] = useState<string | null>(null);
   const isDarkMode = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
   const currentColors = isDarkMode ? DARK_COLORS : COLORS;
-
-  // 按宏观类别统计 (流动性、投资等)
-  const macroData = useMemo(() => {
-    const map = new Map<string, number>();
-    data.breakdown.forEach(item => {
-      const current = map.get(item.macroCategory) || 0;
-      map.set(item.macroCategory, current + item.convertedAmountCNY);
-    });
-    return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
-  }, [data]);
-
-  // 按具体类型统计
-  const typeData = useMemo(() => {
-    const map = new Map<string, number>();
-    data.breakdown.forEach(item => {
-      const current = map.get(item.type) || 0;
-      map.set(item.type, current + item.convertedAmountCNY);
-    });
-    return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
-  }, [data]);
-
-  // Filter the breakdown list based on activeFilter
-  const filteredBreakdown = useMemo(() => {
-    if (!activeFilter) return data.breakdown;
-    if (activeFilter.type === 'macro') {
-      return data.breakdown.filter(item => item.macroCategory === activeFilter.value);
-    }
-    return data.breakdown.filter(item => item.type === activeFilter.value);
-  }, [data.breakdown, activeFilter]);
-
-  // Group assets by macro category for the table
-  const groupedAssets = useMemo(() => {
-    const groups: Record<string, typeof data.breakdown> = {};
-    filteredBreakdown.forEach(item => {
-      if (!groups[item.macroCategory]) {
-        groups[item.macroCategory] = [];
-      }
-      groups[item.macroCategory].push(item);
-    });
-    return groups;
-  }, [filteredBreakdown]);
-
-  // Sort categories
-  const sortedCategories = useMemo(() => {
-      const order = [
-          MacroCategory.LIQUIDITY, 
-          MacroCategory.STABLE, 
-          MacroCategory.INVESTMENT, 
-          MacroCategory.RISK
-      ];
-      return Object.keys(groupedAssets).sort((a, b) => {
-          const indexA = order.indexOf(a as MacroCategory);
-          const indexB = order.indexOf(b as MacroCategory);
-          const valA = indexA === -1 ? 999 : indexA;
-          const valB = indexB === -1 ? 999 : indexB;
-          return valA - valB;
-      });
-  }, [groupedAssets]);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(val);
   };
 
-  const handlePieClick = (data: any) => {
-    if (activeFilter?.type === 'macro' && activeFilter.value === data.name) {
-      setActiveFilter(null);
-    } else {
-      setActiveFilter({ type: 'macro', value: data.name });
-    }
-  };
+  // 1. 各资产类型占比
+  const typeChartData = useMemo(() => {
+    const map = new Map<string, number>();
+    data.breakdown.forEach(item => {
+      map.set(item.type, (map.get(item.type) || 0) + item.convertedAmountCNY);
+    });
+    return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
+  }, [data]);
 
-  const handleBarClick = (data: any) => {
-    if (activeFilter?.type === 'detailed' && activeFilter.value === data.name) {
-      setActiveFilter(null);
-    } else {
-      setActiveFilter({ type: 'detailed', value: data.name });
-    }
-  };
+  // 2. 机构分布占比
+  const entityChartData = useMemo(() => {
+    const map = new Map<string, number>();
+    data.breakdown.forEach(item => {
+      map.set(item.entity, (map.get(item.entity) || 0) + item.convertedAmountCNY);
+    });
+    return Array.from(map.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [data]);
+
+  // 3. 过滤当前选中的机构明细
+  const displayedItems = useMemo(() => {
+    if (!selectedEntity) return data.breakdown;
+    return data.breakdown.filter(item => item.entity === selectedEntity);
+  }, [data, selectedEntity]);
 
   return (
     <div className="space-y-8 animate-fade-in pb-10">
-      {/* 总览卡片 */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 shadow-sm border border-slate-100 dark:border-slate-800 relative overflow-hidden transition-colors duration-300">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-500 dark:to-indigo-500"></div>
-        <div className="flex flex-col md:flex-row items-center justify-between gap-8">
-          <div className="text-center md:text-left">
-            <h2 className="text-sm font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">预估净资产总计</h2>
-            <div className="text-5xl font-black text-slate-900 dark:text-white tracking-tighter transition-colors">
-              {formatCurrency(data.totalNetWorthCNY)}
-            </div>
-          </div>
-          <div className="flex-1 max-w-xl bg-slate-50 dark:bg-slate-800/50 p-5 rounded-xl border border-slate-100 dark:border-slate-800 transition-colors">
-             <div className="text-xs font-bold text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1">
-               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1a1 1 0 112 0v1a1 1 0 11-2 0zM13.536 14.243a1 1 0 011.414 1.414l-.707.707a1 1 0 01-1.414-1.414l.707-.707zM16.243 13.536a1 1 0 011.414-1.414l.707.707a1 1 0 01-1.414 1.414l-.707-.707z" /></svg>
-               AI 快速总结
-             </div>
-             <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed italic">"{data.summary}"</p>
-          </div>
+      {/* 核心指标卡片 */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+          <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">总资产</p>
+          <p className="text-2xl font-black text-blue-600 dark:text-blue-400">{formatCurrency(data.totalNetWorthCNY)}</p>
+        </div>
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+          <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">现金比例</p>
+          <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{(data.riskMetrics.cashRatio * 100).toFixed(1)}%</p>
+        </div>
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+          <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">单一机构集中度</p>
+          <p className="text-2xl font-black text-amber-600 dark:text-amber-400">{(data.riskMetrics.entityConcentration * 100).toFixed(1)}%</p>
+        </div>
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+          <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">股票集中度</p>
+          <p className="text-2xl font-black text-indigo-600 dark:text-indigo-400">{(data.riskMetrics.stockConcentration * 100).toFixed(1)}%</p>
         </div>
       </div>
 
-      {/* 图表分析 */}
+      {/* 图表板块 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 transition-colors">
-          <div className="flex justify-between items-start mb-6">
-            <div>
-              <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-1">宏观资产结构</h3>
-              <p className="text-xs text-slate-400 dark:text-slate-500">点击扇形以过滤下方列表</p>
-            </div>
-            {activeFilter?.type === 'macro' && (
-              <button onClick={() => setActiveFilter(null)} className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium">清除过滤</button>
-            )}
-          </div>
+        {/* 资产分类图 */}
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+          <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-6">资产类别分布</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie 
-                  data={macroData} 
-                  cx="50%" 
-                  cy="50%" 
-                  innerRadius={65} 
-                  outerRadius={90} 
-                  paddingAngle={5} 
-                  dataKey="value"
-                  onClick={handlePieClick}
-                  className="cursor-pointer outline-none"
-                >
-                  {macroData.map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={currentColors[index % currentColors.length]} 
-                      fillOpacity={activeFilter?.type === 'macro' && activeFilter.value !== entry.name ? 0.3 : 1}
-                      stroke={activeFilter?.type === 'macro' && activeFilter.value === entry.name ? (isDarkMode ? '#ffffff' : '#1e293b') : 'none'}
-                      strokeWidth={2}
-                    />
-                  ))}
+                <Pie data={typeChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={85} paddingAngle={5}>
+                  {typeChartData.map((_, index) => <Cell key={index} fill={currentColors[index % currentColors.length]} />)}
                 </Pie>
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: isDarkMode ? '#1e293b' : '#ffffff', 
-                    borderColor: isDarkMode ? '#334155' : '#e2e8f0',
-                    color: isDarkMode ? '#f1f5f9' : '#1e293b',
-                    borderRadius: '12px',
-                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
-                  }}
-                  itemStyle={{ color: isDarkMode ? '#f1f5f9' : '#1e293b' }}
-                  formatter={(value: number) => formatCurrency(value)} 
-                />
-                <Legend verticalAlign="bottom" height={36} iconType="circle"/>
+                <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                <Legend iconType="circle" verticalAlign="bottom" height={36} />
               </PieChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 transition-colors">
-          <div className="flex justify-between items-start mb-6">
-            <div>
-              <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-1">详细资产类别</h3>
-              <p className="text-xs text-slate-400 dark:text-slate-500">点击柱状条以过滤下方列表</p>
-            </div>
-            {activeFilter?.type === 'detailed' && (
-              <button onClick={() => setActiveFilter(null)} className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium">清除过滤</button>
-            )}
-          </div>
+        {/* 机构分布图 */}
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+          <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-6">机构/券商分布 (点击下钻)</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={typeData} margin={{ left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDarkMode ? '#334155' : '#f1f5f9'} />
-                <XAxis 
-                  dataKey="name" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{fill: isDarkMode ? '#94a3b8' : '#64748b', fontSize: 12}} 
-                />
-                <YAxis hide />
-                <Tooltip 
-                  cursor={{fill: isDarkMode ? '#1e293b' : '#f8fafc'}}
-                  contentStyle={{ 
-                    backgroundColor: isDarkMode ? '#1e293b' : '#ffffff', 
-                    borderColor: isDarkMode ? '#334155' : '#e2e8f0',
-                    color: isDarkMode ? '#f1f5f9' : '#1e293b',
-                    borderRadius: '12px'
-                  }}
-                  formatter={(value: number) => formatCurrency(value)} 
-                />
+              <BarChart data={entityChartData} layout="vertical" margin={{ left: 20, right: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke={isDarkMode ? '#334155' : '#f1f5f9'} />
+                <XAxis type="number" hide />
+                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{fill: isDarkMode ? '#94a3b8' : '#64748b', fontSize: 12}} />
+                <Tooltip formatter={(value: number) => formatCurrency(value)} cursor={{fill: 'transparent'}} />
                 <Bar 
                   dataKey="value" 
-                  radius={[6, 6, 0, 0]} 
-                  barSize={42}
-                  onClick={handleBarClick}
-                  className="cursor-pointer outline-none"
+                  radius={[0, 4, 4, 0]} 
+                  barSize={20}
+                  onClick={(entry) => setSelectedEntity(selectedEntity === entry.name ? null : entry.name)}
+                  className="cursor-pointer"
                 >
-                   {typeData.map((entry, index) => (
+                  {entityChartData.map((entry, index) => (
                     <Cell 
-                      key={`cell-${index}`} 
-                      fill={isDarkMode ? '#6366f1' : '#4f46e5'} 
-                      fillOpacity={activeFilter?.type === 'detailed' && activeFilter.value !== entry.name ? 0.3 : 1}
+                      key={index} 
+                      fill={selectedEntity === entry.name ? '#3b82f6' : (isDarkMode ? '#1e293b' : '#e2e8f0')} 
                     />
                   ))}
                 </Bar>
@@ -226,102 +114,76 @@ export const Dashboard: React.FC<DashboardProps> = ({ data }) => {
         </div>
       </div>
 
-      {/* AI 深度分析板块 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-950/40 dark:to-blue-950/40 p-6 rounded-2xl border border-blue-100 dark:border-blue-900/50 shadow-sm transition-colors">
-          <div className="flex items-center gap-2 mb-4">
-             <div className="bg-blue-600 dark:bg-blue-500 p-2 rounded-lg text-white">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-             </div>
-             <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">资产分布分析</h3>
-          </div>
-          <p className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
-            {data.distributionAnalysis}
-          </p>
-        </div>
-
-        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 p-6 rounded-2xl border border-emerald-100 dark:border-emerald-900/50 shadow-sm transition-colors">
-          <div className="flex items-center gap-2 mb-4">
-             <div className="bg-emerald-600 dark:bg-emerald-500 p-2 rounded-lg text-white">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-             </div>
-             <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">专业投资建议</h3>
-          </div>
-          <div className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
-            {data.investmentAdvice}
-          </div>
-        </div>
-      </div>
-
-      {/* 资产列表 */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden transition-colors duration-300" id="asset-list">
-        <div className="px-6 py-4 border-b border-slate-50 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex flex-wrap justify-between items-center gap-4">
-            <div className="flex items-center gap-3">
+      {/* 资产列表 - 增加下钻效果 */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-50 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex justify-between items-center">
+            <div className="flex items-center gap-2">
               <h3 className="text-lg font-bold text-slate-800 dark:text-white">资产项目明细</h3>
-              {activeFilter && (
-                <div className="flex items-center gap-2 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-full text-xs font-bold border border-blue-200 dark:border-blue-800 animate-pulse">
-                  <span>过滤中: {activeFilter.value}</span>
-                  <button onClick={() => setActiveFilter(null)} className="hover:text-blue-900 dark:hover:text-blue-100">
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-                  </button>
-                </div>
+              {selectedEntity && (
+                <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded text-xs font-bold border border-blue-200 dark:border-blue-800 flex items-center gap-1">
+                  机构: {selectedEntity}
+                  <button onClick={() => setSelectedEntity(null)} className="hover:text-blue-900 dark:hover:text-blue-100">×</button>
+                </span>
               )}
             </div>
-            <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">显示 {filteredBreakdown.length} / {data.breakdown.length} 个资产项</span>
+            <span className="text-xs text-slate-400 font-medium">共 {displayedItems.length} 项</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50/50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 font-medium">
+            <thead className="bg-slate-50/50 dark:bg-slate-800/50 text-slate-500 font-medium border-b dark:border-slate-800">
               <tr>
-                <th className="px-6 py-4">资产详情</th>
-                <th className="px-6 py-4">具体类型</th>
-                <th className="px-6 py-4 text-right">折合人民币</th>
+                <th className="px-6 py-4">资产名称/描述</th>
+                <th className="px-6 py-4">机构</th>
+                <th className="px-6 py-4">分类</th>
+                <th className="px-6 py-4 text-right">估值 (CNY)</th>
               </tr>
             </thead>
-            
-            {sortedCategories.length > 0 ? (
-              sortedCategories.map(category => (
-                <tbody key={category} className="divide-y divide-slate-50 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800 last:border-0 transition-opacity duration-300">
-                    <tr className="bg-slate-50/30 dark:bg-slate-800/20">
-                        <td colSpan={3} className="px-6 py-2 text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-900/20">
-                            {category}
-                        </td>
-                    </tr>
-                    {groupedAssets[category].map((item, index) => (
-                        <tr key={`${category}-${index}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors animate-fade-in">
-                            <td className="px-6 py-4">
-                                <div className="font-bold text-slate-800 dark:text-slate-100">{item.name}</div>
-                                <div className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 font-medium">{item.originalAmount.toLocaleString()} {item.currency} · {item.description}</div>
-                            </td>
-                            <td className="px-6 py-4">
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold shadow-sm
-                                    ${item.type === AssetType.STOCK ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300' : ''}
-                                    ${item.type === AssetType.CASH ? 'bg-green-100 text-green-700 dark:bg-green-900/60 dark:text-green-300' : ''}
-                                    ${item.type === AssetType.FUND ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300' : ''}
-                                    ${item.type === AssetType.GOLD ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/60 dark:text-yellow-300' : ''}
-                                    ${item.type === AssetType.CRYPTO ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/60 dark:text-orange-300' : ''}
-                                    ${item.type === AssetType.OTHER ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' : ''}
-                                `}>
-                                    {item.type}
-                                </span>
-                            </td>
-                            <td className="px-6 py-4 text-right">
-                                <div className="font-bold text-slate-900 dark:text-white">{formatCurrency(item.convertedAmountCNY)}</div>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-              ))
-            ) : (
-              <tbody>
-                <tr>
-                  <td colSpan={3} className="px-6 py-20 text-center text-slate-400 dark:text-slate-500">
-                    没有符合过滤条件的资产项
+            <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+              {displayedItems.map((item, idx) => (
+                <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="font-bold text-slate-800 dark:text-slate-100">{item.name}</div>
+                    <div className="text-xs text-slate-400 truncate max-w-xs">{item.description}</div>
+                  </td>
+                  <td className="px-6 py-4 text-slate-600 dark:text-slate-400">{item.entity}</td>
+                  <td className="px-6 py-4">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border dark:border-slate-700">
+                      {item.type}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right font-bold text-slate-900 dark:text-white">
+                    {formatCurrency(item.convertedAmountCNY)}
                   </td>
                 </tr>
-              </tbody>
-            )}
+              ))}
+            </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* 风险提示 & AI 建议 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-rose-50 dark:bg-rose-950/20 p-6 rounded-2xl border border-rose-100 dark:border-rose-900/50">
+          <h3 className="text-rose-800 dark:text-rose-400 font-bold mb-4 flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            配置风险提示
+          </h3>
+          <ul className="space-y-3">
+            {data.riskMetrics.riskAlerts.map((alert, i) => (
+              <li key={i} className="text-sm text-rose-700 dark:text-rose-300 flex gap-2">
+                <span className="text-rose-400">•</span> {alert}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="bg-blue-50 dark:bg-blue-950/20 p-6 rounded-2xl border border-blue-100 dark:border-blue-900/50">
+          <h3 className="text-blue-800 dark:text-blue-400 font-bold mb-4 flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+            AI 投资调仓建议
+          </h3>
+          <p className="text-sm text-blue-700 dark:text-blue-300 leading-relaxed italic">
+            {data.investmentAdvice}
+          </p>
         </div>
       </div>
     </div>

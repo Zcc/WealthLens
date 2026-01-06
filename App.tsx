@@ -1,61 +1,82 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { analyzeFinancialScreenshots } from './services/gemini.ts';
 import { AssetAnalysisResult, ProcessingStatus } from './types.ts';
 import { Dashboard } from './components/Dashboard.tsx';
 import html2canvas from 'html2canvas';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 
-// Icons
+// Components & Icons
 const UploadIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
 );
-const MoonIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-);
-const SunIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-);
-const ImageDownloadIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-);
+const MoonIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>;
+const SunIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>;
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState<'upload' | 'history' | 'privacy'>('upload');
   const [status, setStatus] = useState<ProcessingStatus>('idle');
   const [files, setFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [result, setResult] = useState<AssetAnalysisResult | null>(null);
+  const [history, setHistory] = useState<AssetAnalysisResult[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isExportingImage, setIsExportingImage] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('theme') === 'dark' || 
-        (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      return localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
     }
     return false;
   });
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const reportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
+    const saved = localStorage.getItem('wealth_history');
+    if (saved) {
+      try { setHistory(JSON.parse(saved)); } catch(e) { console.error(e); }
     }
+  }, []);
+
+  useEffect(() => {
+    if (isDarkMode) { document.documentElement.classList.add('dark'); localStorage.setItem('theme', 'dark'); }
+    else { document.documentElement.classList.remove('dark'); localStorage.setItem('theme', 'light'); }
   }, [isDarkMode]);
 
   const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setFiles(Array.from(e.target.files));
-      setErrorMsg(null);
-      if (status === 'complete') {
-        setStatus('idle');
-        setResult(null);
-      }
-    }
+  const handleFileSelection = (newFiles: FileList | null) => {
+    if (!newFiles) return;
+    const addedFiles = Array.from(newFiles).filter(file => file.type.startsWith('image/'));
+    setFiles(prev => [...prev, ...addedFiles]);
+    setErrorMsg(null);
+  };
+
+  const removeFile = (index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const moveFile = (index: number, direction: 'up' | 'down') => {
+    setFiles(prev => {
+      const newFiles = [...prev];
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= newFiles.length) return prev;
+      [newFiles[index], newFiles[targetIndex]] = [newFiles[targetIndex], newFiles[index]];
+      return newFiles;
+    });
+  };
+
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const onDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleFileSelection(e.dataTransfer.files);
   };
 
   const handleAnalyze = async () => {
@@ -65,256 +86,245 @@ export default function App() {
     try {
       const data = await analyzeFinancialScreenshots(files);
       setResult(data);
+      const newHistory = [data, ...history].slice(0, 50);
+      setHistory(newHistory);
+      localStorage.setItem('wealth_history', JSON.stringify(newHistory));
       setStatus('complete');
     } catch (err: any) {
-      setErrorMsg(err.message || "发生意外错误，请重试。");
+      setErrorMsg(err.message || "分析失败，请检查网络或图片质量。");
       setStatus('error');
     }
   };
 
-  const handleDownloadCSV = () => {
-    if (!result) return;
-    const headers = ['资产名称', '原币金额', '币种', '人民币价值', '类型', '宏观分类', '描述'];
-    const rows = result.breakdown.map(item => [
-      item.name,
-      item.originalAmount,
-      item.currency,
-      item.convertedAmountCNY,
-      item.type,
-      item.macroCategory,
-      item.description || ''
-    ]);
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => {
-        const stringCell = String(cell);
-        return `"${stringCell.replace(/"/g, '""')}"`;
-      }).join(','))
-    ].join('\n');
-    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `wealth_analysis_${new Date().toISOString().slice(0,10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleDownloadImage = async () => {
-    if (!reportRef.current || isExportingImage) return;
-    
-    setIsExportingImage(true);
-    try {
-      const canvas = await html2canvas(reportRef.current, {
-        useCORS: true,
-        scale: 2, // Higher resolution
-        backgroundColor: isDarkMode ? '#020617' : '#f8fafc', // Match bg-slate-950 or bg-slate-50
-        logging: false,
-        onclone: (clonedDoc) => {
-          // Hide elements that shouldn't be in the screenshot if needed
-          const header = clonedDoc.querySelector('header');
-          if (header) header.style.display = 'none';
-        }
-      });
-      
-      const image = canvas.toDataURL('image/png', 1.0);
-      const link = document.createElement('a');
-      link.download = `wealth_report_${new Date().toISOString().slice(0,10)}.png`;
-      link.href = image;
-      link.click();
-    } catch (err) {
-      console.error('Failed to export image:', err);
-      alert('图片导出失败，请重试');
-    } finally {
-      setIsExportingImage(false);
-    }
-  };
+  const trendData = useMemo(() => {
+    return history.slice().reverse().map(h => ({
+      date: new Date(h.timestamp).toLocaleDateString(),
+      value: h.totalNetWorthCNY
+    }));
+  }, [history]);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300 pb-20">
-      {/* Header */}
-      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-20 transition-colors duration-300">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="bg-blue-600 rounded-lg p-1.5 shadow-sm shadow-blue-500/20">
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            </div>
-            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">
-              WealthLens 财富透镜
+      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            <h1 className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 cursor-pointer" onClick={() => setActiveTab('upload')}>
+              WealthLens
             </h1>
+            <nav className="hidden md:flex gap-4">
+               {['upload', 'history', 'privacy'].map((tab) => (
+                 <button 
+                  key={tab}
+                  onClick={() => setActiveTab(tab as any)}
+                  className={`px-3 py-1 rounded-full text-sm font-bold transition-all ${activeTab === tab ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'}`}
+                 >
+                   {tab === 'upload' ? '新分析' : tab === 'history' ? '历史趋势' : '隐私说明'}
+                 </button>
+               ))}
+            </nav>
           </div>
           <div className="flex items-center gap-4">
-            <button 
-              onClick={toggleDarkMode}
-              className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-              aria-label="Toggle dark mode"
-            >
+            <button onClick={toggleDarkMode} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:shadow-inner transition-all">
               {isDarkMode ? <SunIcon /> : <MoonIcon />}
             </button>
-            <div className="text-sm text-slate-500 dark:text-slate-400 hidden sm:block font-medium">
-              AI 驱动的个人资产专家
-            </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        
-        {/* Intro / Upload Section */}
-        {(status === 'idle' || status === 'error' || (status === 'complete' && result === null)) ? (
-            <div className="max-w-2xl mx-auto text-center space-y-8 animate-fade-in-up">
-                <div className="space-y-4">
-                    <h2 className="text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-tight">
-                        一键生成您的全景资产视图
-                    </h2>
-                    <p className="text-lg text-slate-600 dark:text-slate-400">
-                        上传银行或股票账户截图，AI 将自动提取数据、去重并生成统一的资产仪表盘。
-                    </p>
+      <main className="max-w-5xl mx-auto px-4 py-8">
+        {activeTab === 'upload' && (
+          <div className="animate-fade-in-up">
+            {status === 'complete' && result ? (
+               <div className="space-y-6">
+                  <div className="flex justify-between items-center bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <h2 className="text-lg font-bold">快照分析已完成</h2>
+                    <button onClick={() => { setStatus('idle'); setFiles([]); setResult(null); }} className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg shadow-lg shadow-blue-500/20 hover:scale-105 transition-all">
+                      重新开始
+                    </button>
+                  </div>
+                  <Dashboard data={result} />
+               </div>
+            ) : status === 'analyzing' ? (
+              <div className="text-center py-20 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border dark:border-slate-800">
+                <div className="inline-block animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full mb-4"></div>
+                <h2 className="text-xl font-bold mb-2">正在深度扫描所有账户...</h2>
+                <p className="text-slate-500 dark:text-slate-400">AI 正在进行去重、汇率转换、分类及风险量化分析</p>
+              </div>
+            ) : (
+              <div className="max-w-2xl mx-auto space-y-10">
+                <div className="text-center space-y-4">
+                  <h2 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">上传金融截图</h2>
+                  <p className="text-slate-500 dark:text-slate-400 font-medium">支持银行余额、股票持仓、基金账户等截图。不保存原始图片，仅提取数据。</p>
                 </div>
 
-                <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-lg border border-slate-100 dark:border-slate-800 transition-all hover:shadow-xl">
-                    <div 
-                        className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-10 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:border-blue-400 dark:hover:border-blue-500 transition-colors group"
-                        onClick={() => fileInputRef.current?.click()}
-                    >
-                        <input 
-                            type="file" 
-                            multiple 
-                            accept="image/*" 
-                            ref={fileInputRef} 
-                            className="hidden" 
-                            onChange={handleFileChange} 
-                        />
-                        <div className="bg-blue-50 dark:bg-blue-900/30 p-4 rounded-full mb-4 group-hover:scale-110 transition-transform text-blue-600 dark:text-blue-400">
-                            <UploadIcon />
-                        </div>
-                        <p className="text-slate-900 dark:text-slate-100 font-medium text-lg">
-                            {files.length > 0 ? `已选择 ${files.length} 张图片` : "点击上传截图"}
-                        </p>
-                        <p className="text-slate-500 dark:text-slate-400 text-sm mt-2 font-medium">
-                            支持 JPG, PNG (单张最大 10MB)
-                        </p>
-                    </div>
+                <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800">
+                  <div 
+                    onDragOver={onDragOver}
+                    onDragLeave={onDragLeave}
+                    onDrop={onDrop}
+                    className={`border-2 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center cursor-pointer transition-all group ${isDragging ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-200 dark:border-slate-800'}`}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <input type="file" multiple accept="image/*" ref={fileInputRef} className="hidden" onChange={(e) => handleFileSelection(e.target.files)} />
+                    <div className="p-4 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-2xl mb-4 group-hover:scale-110 transition-transform"><UploadIcon /></div>
+                    <p className="text-lg font-bold">{isDragging ? "松手即可上传" : "点击或拖拽截图到此处"}</p>
+                    <p className="text-xs text-slate-400 mt-2 font-bold uppercase tracking-widest">支持多张图片合并分析</p>
+                  </div>
 
-                    {files.length > 0 && (
-                        <div className="mt-6 flex flex-col gap-3">
-                            <div className="flex flex-wrap gap-2 justify-center">
-                                {files.slice(0, 5).map((f, i) => (
-                                    <span key={i} className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs rounded-full truncate max-w-[150px] font-medium border border-slate-200 dark:border-slate-700">
-                                        {f.name}
-                                    </span>
-                                ))}
-                                {files.length > 5 && <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs rounded-full border border-slate-200 dark:border-slate-700">+{files.length - 5} 更多</span>}
+                  {files.length > 0 && (
+                    <div className="mt-8 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest">待分析文件 ({files.length})</h3>
+                        <button onClick={() => setFiles([])} className="text-xs font-bold text-rose-500 hover:underline">清空全部</button>
+                      </div>
+                      <div className="max-h-60 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
+                        {files.map((file, index) => (
+                          <div key={`${file.name}-${index}`} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700/50 animate-fade-in">
+                            <div className="flex items-center gap-3 overflow-hidden">
+                              <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/40 rounded-lg flex items-center justify-center text-blue-600 flex-shrink-0">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                              </div>
+                              <span className="text-sm font-medium truncate">{file.name}</span>
                             </div>
-                            <button
-                                onClick={handleAnalyze}
-                                className="w-full bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-[1.01] active:scale-[0.99] shadow-md hover:shadow-lg flex items-center justify-center gap-2"
-                            >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                                开始 AI 深度分析
-                            </button>
-                        </div>
-                    )}
-                     {errorMsg && (
-                        <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg text-sm border border-red-100 dark:border-red-900/50 font-medium">
-                            {errorMsg}
-                        </div>
-                    )}
-                </div>
-            </div>
-        ) : null}
-
-        {/* Loading View */}
-        {status === 'analyzing' && (
-            <div className="max-w-2xl mx-auto mt-12 space-y-8 animate-fade-in">
-                <div className="bg-white dark:bg-slate-900 p-10 rounded-2xl shadow-xl border border-blue-100 dark:border-slate-800 text-center relative overflow-hidden transition-colors duration-300">
-                    <div className="mx-auto w-20 h-20 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mb-6 relative">
-                        <div className="absolute w-full h-full rounded-full border-4 border-blue-100 dark:border-blue-900/50 border-t-blue-600 dark:border-t-blue-400 animate-spin"></div>
-                         <svg className="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                        </svg>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <button onClick={(e) => { e.stopPropagation(); moveFile(index, 'up'); }} disabled={index === 0} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded disabled:opacity-20">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); moveFile(index, 'down'); }} disabled={index === files.length - 1} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded disabled:opacity-20">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); removeFile(index); }} className="p-1 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded ml-2">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <button onClick={handleAnalyze} className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20 transition-all hover:-translate-y-1">
+                        开始全景分析
+                      </button>
                     </div>
-
-                    <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-3">正在智能分析您的资产...</h3>
-                    <p className="text-slate-500 dark:text-slate-400 text-base mb-8 max-w-md mx-auto leading-relaxed font-medium">
-                        AI 正在处理 <span className="font-semibold text-blue-600 dark:text-blue-400">{files.length}</span> 张截图，提取账户余额并进行汇率换算。<br/>请耐心等待，通常需要 10-30 秒。
-                    </p>
-
-                    <div className="w-full max-w-md mx-auto bg-slate-100 dark:bg-slate-800 rounded-full h-3 overflow-hidden relative shadow-inner">
-                         <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-500 to-indigo-600 dark:from-blue-400 dark:to-indigo-500 rounded-full animate-indeterminate-progress"></div>
-                    </div>
+                  )}
+                  {errorMsg && <p className="mt-4 text-center text-rose-500 font-bold text-sm">{errorMsg}</p>}
                 </div>
 
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800 opacity-60 transition-colors duration-300">
-                    <div className="h-6 bg-slate-200 dark:bg-slate-800 rounded w-1/3 mb-6 animate-pulse"></div>
-                    <div className="space-y-4">
-                         {[1, 2, 3].map(i => (
-                             <div key={i} className="flex items-center justify-between p-4 border border-slate-50 dark:border-slate-800/50 rounded-lg">
-                                 <div className="flex items-center gap-3">
-                                     <div className="w-10 h-10 bg-slate-200 dark:bg-slate-800 rounded-full animate-pulse"></div>
-                                     <div className="space-y-2">
-                                         <div className="h-4 w-24 bg-slate-200 dark:bg-slate-800 rounded animate-pulse"></div>
-                                         <div className="h-3 w-16 bg-slate-200 dark:bg-slate-800 rounded animate-pulse"></div>
-                                     </div>
-                                 </div>
-                                 <div className="h-5 w-20 bg-slate-200 dark:bg-slate-800 rounded animate-pulse"></div>
-                             </div>
-                         ))}
-                    </div>
+                <div className="bg-slate-100 dark:bg-slate-900/40 p-4 rounded-2xl flex items-center gap-4 border border-slate-200 dark:border-slate-800">
+                   <div className="text-emerald-500 bg-emerald-100 dark:bg-emerald-900/40 p-2 rounded-full">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                   </div>
+                   <div className="text-xs">
+                     <p className="font-bold text-slate-800 dark:text-slate-200">隐私承诺</p>
+                     <p className="text-slate-500">本工具仅提取截图中的文字数值，不上传原始截图文件至持久化存储，分析完成后立即销毁图片引用。</p>
+                   </div>
                 </div>
-            </div>
+              </div>
+            )}
+          </div>
         )}
 
-        {/* Results View */}
-        {status === 'complete' && result && (
-             <div className="space-y-6">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800 mb-2">
-                    <h2 className="text-xl font-bold text-slate-800 dark:text-white">分析结果 (Analysis Summary)</h2>
-                    <div className="flex flex-wrap gap-2">
-                        <button 
-                            onClick={handleDownloadCSV}
-                            className="inline-flex items-center px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none transition-all active:scale-95"
-                        >
-                            <svg className="-ml-1 mr-2 h-4 w-4 text-slate-500 dark:text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                            下载 CSV
-                        </button>
-                        <button 
-                            onClick={handleDownloadImage}
-                            disabled={isExportingImage}
-                            className="inline-flex items-center px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none transition-all active:scale-95 disabled:opacity-50"
-                        >
-                            {isExportingImage ? (
-                                <div className="animate-spin mr-2 h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-                            ) : (
-                                <span className="mr-2 text-slate-500 dark:text-slate-400"><ImageDownloadIcon /></span>
-                            )}
-                            下载报告图片
-                        </button>
-                        <button 
-                            onClick={() => { setStatus('idle'); setFiles([]); setResult(null); }}
-                            className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 focus:outline-none transition-all active:scale-95"
-                        >
-                            重新分析
-                        </button>
-                    </div>
+        {activeTab === 'history' && (
+          <div className="space-y-8 animate-fade-in">
+             <div className="flex justify-between items-end">
+                <div>
+                  <h2 className="text-3xl font-black">历史资产趋势</h2>
+                  <p className="text-slate-500 font-medium">通过快照记录财富增长轨迹</p>
                 </div>
-                <div ref={reportRef} className="rounded-2xl overflow-hidden p-1">
-                   <Dashboard data={result} />
+                <button onClick={() => { if(confirm('确定清空所有历史快照吗？')) { setHistory([]); localStorage.removeItem('wealth_history'); } }} className="text-xs font-bold text-rose-500 hover:underline">清空记录</button>
+             </div>
+
+             {history.length > 1 ? (
+               <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl shadow-sm border dark:border-slate-800">
+                  <h3 className="text-sm font-bold text-slate-400 mb-6 uppercase tracking-widest">总资产变动曲线</h3>
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={trendData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDarkMode ? '#334155' : '#f1f5f9'} />
+                        <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11}} />
+                        <YAxis hide />
+                        <ChartTooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                        <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={4} dot={{r: 4, fill: '#3b82f6'}} activeDot={{r: 6}} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+               </div>
+             ) : history.length === 0 ? (
+                <div className="py-20 text-center text-slate-400 bg-white dark:bg-slate-900 rounded-3xl border border-dashed dark:border-slate-800">
+                  暂无历史记录，开始第一次分析吧！
+                </div>
+             ) : (
+                <div className="p-10 text-center text-slate-500 bg-blue-50 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-800/50">
+                   快照数据过少，无法生成趋势。继续上传新截图以追踪变化。
+                </div>
+             )}
+
+             <div className="space-y-4">
+                <h3 className="text-lg font-bold">时间轴快照</h3>
+                <div className="grid gap-4">
+                  {history.map((h) => (
+                    <div key={h.id} className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between hover:border-blue-200 transition-all group">
+                       <div className="flex items-center gap-4">
+                         <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/40 rounded-xl flex items-center justify-center text-blue-600 font-bold text-xs text-center">
+                           {new Date(h.timestamp).getDate()}<br/>{new Date(h.timestamp).getMonth() + 1}月
+                         </div>
+                         <div>
+                            <div className="font-bold">{new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(h.totalNetWorthCNY)}</div>
+                            <div className="text-xs text-slate-400">{h.breakdown.length} 个资产项 · {h.riskMetrics.riskAlerts.length} 条风险提示</div>
+                         </div>
+                       </div>
+                       <button onClick={() => { setResult(h); setStatus('complete'); setActiveTab('upload'); }} className="text-sm font-bold text-blue-600 hover:text-blue-800 transition-colors">查看详情 →</button>
+                    </div>
+                  ))}
                 </div>
              </div>
+          </div>
+        )}
+
+        {activeTab === 'privacy' && (
+          <div className="max-w-2xl mx-auto space-y-8 animate-fade-in">
+             <div className="text-center">
+                <div className="inline-block p-4 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-500 rounded-full mb-4">
+                  <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                </div>
+                <h2 className="text-3xl font-black">隐私与安全说明</h2>
+             </div>
+
+             <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-sm border dark:border-slate-800 space-y-6">
+                <section>
+                  <h3 className="text-lg font-bold mb-2">数据处理原则</h3>
+                  <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
+                    本应用遵循“隐私优先”原则。上传的截图仅用于前端解析，识别后的结构化数据存储在您的浏览器本地（LocalStorage），图片文件本身不会存储在任何服务器。
+                  </p>
+                </section>
+                <section>
+                   <h3 className="text-lg font-bold mb-2">关于 Gemini AI 分析</h3>
+                   <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
+                     当您发起分析时，图片数据会通过安全链路发送至 Google Gemini API 节点进行 OCR 和语义分析。这是为了提供高精度的币种转换和风险建议。分析过程不包含对卡号、身份证号等敏感信息的针对性抓取。
+                   </p>
+                </section>
+                <section>
+                   <h3 className="text-lg font-bold mb-2">建议的安全操作</h3>
+                   <ul className="text-sm text-slate-600 dark:text-slate-400 list-disc list-inside space-y-2">
+                     <li>截屏前请遮挡完整的卡号或账户名</li>
+                     <li>不要在公共网络环境下分析大额敏感截图</li>
+                     <li>如有疑虑，可随时通过“清空历史”功能移除本地存储的所有数据</li>
+                   </ul>
+                </section>
+             </div>
+          </div>
         )}
       </main>
+
       <style>{`
-          @keyframes indeterminate-progress {
-              0% { left: -100%; width: 50%; }
-              50% { left: 100%; width: 50%; }
-              100% { left: 100%; width: 50%; }
-          }
-          .animate-indeterminate-progress {
-              animation: indeterminate-progress 1.5s infinite linear;
-          }
+          @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes fade-in-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+          .animate-fade-in { animation: fade-in 0.5s ease-out; }
+          .animate-fade-in-up { animation: fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+          @keyframes indeterminate-progress { 0% { left: -100%; width: 50%; } 50% { left: 100%; width: 50%; } 100% { left: 100%; width: 50%; } }
+          .animate-indeterminate-progress { animation: indeterminate-progress 1.5s infinite linear; }
+          .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+          .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+          .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+          .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; }
       `}</style>
     </div>
   );

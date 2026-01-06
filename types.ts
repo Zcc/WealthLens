@@ -16,6 +16,7 @@ export enum MacroCategory {
 
 export interface AssetItem {
   name: string;
+  entity: string; // 银行或券商名称
   originalAmount: number;
   currency: string;
   convertedAmountCNY: number;
@@ -25,11 +26,19 @@ export interface AssetItem {
 }
 
 export interface AssetAnalysisResult {
+  id: string;
+  timestamp: number;
   totalNetWorthCNY: number;
   breakdown: AssetItem[];
   summary: string;
-  distributionAnalysis: string; // 整体分布分析
-  investmentAdvice: string; // 具体的投资建议
+  distributionAnalysis: string;
+  investmentAdvice: string;
+  riskMetrics: {
+    stockConcentration: number; // 前5大股票占比
+    entityConcentration: number; // 单一机构最高占比
+    cashRatio: number; // 现金比例
+    riskAlerts: string[]; // 风险提示列表
+  };
 }
 
 export type ProcessingStatus = 'idle' | 'uploading' | 'analyzing' | 'complete' | 'error';
