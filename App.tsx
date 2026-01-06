@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { analyzeFinancialScreenshots } from './services/gemini';
-import { AssetAnalysisResult, ProcessingStatus } from './types';
-import { Dashboard } from './components/Dashboard';
+import { analyzeFinancialScreenshots } from './services/gemini.ts';
+import { AssetAnalysisResult, ProcessingStatus } from './types.ts';
+import { Dashboard } from './components/Dashboard.tsx';
 
 // Icons
 const UploadIcon = () => (

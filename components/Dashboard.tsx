@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { AssetAnalysisResult, MacroCategory } from '../types';
+import { AssetAnalysisResult, MacroCategory } from '../types.ts';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 interface DashboardProps {

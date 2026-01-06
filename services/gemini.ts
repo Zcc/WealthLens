@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { AssetAnalysisResult, AssetType, MacroCategory } from "../types";
+import { AssetAnalysisResult, AssetType, MacroCategory } from "../types.ts";
 
 const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: string; mimeType: string } }> => {
   return new Promise((resolve, reject) => {
