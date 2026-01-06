@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { analyzeFinancialScreenshots } from './services/gemini.ts';
 import { AssetAnalysisResult, ProcessingStatus } from './types.ts';
 import { Dashboard } from './components/Dashboard.tsx';
-import html2canvas from 'html2canvas';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 
 // Components & Icons
@@ -20,6 +19,12 @@ export default function App() {
   const [result, setResult] = useState<AssetAnalysisResult | null>(null);
   const [history, setHistory] = useState<AssetAnalysisResult[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
+  // 新增进度相关状态
+  const [progress, setProgress] = useState(0);
+  const [loadingText, setLoadingText] = useState('准备分析...');
+  const [loadingSubText, setLoadingSubText] = useState('正在初始化 AI 引擎');
+
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -81,16 +86,53 @@ export default function App() {
 
   const handleAnalyze = async () => {
     if (files.length === 0) return;
+    
     setStatus('analyzing');
     setErrorMsg(null);
+    setProgress(5);
+    setLoadingText('正在分析资产...');
+
+    // 模拟进度的定时器，让用户感知到动作
+    let currentStep = 0;
+    const steps = [
+      { p: 10, text: '准备图像数据...', sub: '正在进行 Base64 安全编码' },
+      ...files.map((f, i) => ({ 
+        p: 15 + ((i + 1) / files.length) * 50, 
+        text: `正在扫描第 ${i + 1}/${files.length} 张截图`, 
+        sub: `提取关键信息: ${f.name.length > 20 ? f.name.substring(0, 17) + '...' : f.name}` 
+      })),
+      { p: 75, text: '正在跨机构对账...', sub: '识别重复项目并转换币种' },
+      { p: 85, text: '正在进行风险量化...', sub: '计算集中度与现金比例' },
+      { p: 92, text: '生成专家建议...', sub: 'AI 正在分析资产结构优化方案' }
+    ];
+
+    const timer = setInterval(() => {
+      if (currentStep < steps.length) {
+        setProgress(steps[currentStep].p);
+        setLoadingText(steps[currentStep].text);
+        setLoadingSubText(steps[currentStep].sub);
+        currentStep++;
+      } else {
+        // 保持在 95% 左右直到真实结果返回
+        setProgress(prev => Math.min(prev + 0.5, 98));
+      }
+    }, 1500);
+
     try {
       const data = await analyzeFinancialScreenshots(files);
+      clearInterval(timer);
+      setProgress(100);
       setResult(data);
       const newHistory = [data, ...history].slice(0, 50);
       setHistory(newHistory);
       localStorage.setItem('wealth_history', JSON.stringify(newHistory));
-      setStatus('complete');
+      
+      // 延迟一下让用户看到 100% 状态
+      setTimeout(() => {
+        setStatus('complete');
+      }, 500);
     } catch (err: any) {
+      clearInterval(timer);
       setErrorMsg(err.message || "分析失败，请检查网络或图片质量。");
       setStatus('error');
     }
@@ -137,7 +179,12 @@ export default function App() {
             {status === 'complete' && result ? (
                <div className="space-y-6">
                   <div className="flex justify-between items-center bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <h2 className="text-lg font-bold">快照分析已完成</h2>
+                    <div className="flex items-center gap-3">
+                       <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                       </div>
+                       <h2 className="text-lg font-bold">全景资产快照已生成</h2>
+                    </div>
                     <button onClick={() => { setStatus('idle'); setFiles([]); setResult(null); }} className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg shadow-lg shadow-blue-500/20 hover:scale-105 transition-all">
                       重新开始
                     </button>
@@ -145,10 +192,32 @@ export default function App() {
                   <Dashboard data={result} />
                </div>
             ) : status === 'analyzing' ? (
-              <div className="text-center py-20 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border dark:border-slate-800">
-                <div className="inline-block animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full mb-4"></div>
-                <h2 className="text-xl font-bold mb-2">正在深度扫描所有账户...</h2>
-                <p className="text-slate-500 dark:text-slate-400">AI 正在进行去重、汇率转换、分类及风险量化分析</p>
+              <div className="max-w-xl mx-auto py-16 bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border dark:border-slate-800 px-8 text-center animate-fade-in">
+                <div className="relative w-24 h-24 mx-auto mb-8">
+                  <div className="absolute inset-0 border-4 border-blue-100 dark:border-blue-900/30 rounded-full"></div>
+                  <div 
+                    className="absolute inset-0 border-4 border-blue-600 rounded-full border-t-transparent animate-spin"
+                    style={{ animationDuration: '1s' }}
+                  ></div>
+                  <div className="absolute inset-0 flex items-center justify-center font-black text-blue-600 dark:text-blue-400">
+                    {Math.round(progress)}%
+                  </div>
+                </div>
+                
+                <h2 className="text-2xl font-black mb-2 text-slate-800 dark:text-white">{loadingText}</h2>
+                <p className="text-slate-500 dark:text-slate-400 font-medium text-sm mb-10">{loadingSubText}</p>
+                
+                <div className="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mb-4 border border-slate-200 dark:border-slate-700">
+                   <div 
+                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-700 ease-out"
+                    style={{ width: `${progress}%` }}
+                   ></div>
+                </div>
+                
+                <div className="flex items-center justify-center gap-2 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                   <svg className="w-3 h-3 animate-pulse" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" /></svg>
+                   AI 分析通常需要 10-20 秒，请稍候
+                </div>
               </div>
             ) : (
               <div className="max-w-2xl mx-auto space-y-10">
