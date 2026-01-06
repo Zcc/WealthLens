@@ -47,6 +47,45 @@ export default function App() {
     }
   };
 
+  const handleDownloadCSV = () => {
+    if (!result) return;
+    
+    // Define CSV headers
+    const headers = ['资产名称', '原币金额', '币种', '人民币价值', '类型', '宏观分类', '描述'];
+    
+    // Map data to rows
+    const rows = result.breakdown.map(item => [
+      item.name,
+      item.originalAmount,
+      item.currency,
+      item.convertedAmountCNY,
+      item.type,
+      item.macroCategory,
+      item.description || ''
+    ]);
+    
+    // Construct CSV content with proper escaping
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => {
+        // Escape quotes and wrap in quotes to handle commas within fields
+        const stringCell = String(cell);
+        return `"${stringCell.replace(/"/g, '""')}"`;
+      }).join(','))
+    ].join('\n');
+    
+    // Add BOM for Excel UTF-8 compatibility
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    
+    // Trigger download
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `wealth_analysis_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-20">
       {/* Header */}
@@ -198,12 +237,23 @@ export default function App() {
              <div className="space-y-6">
                 <div className="flex justify-between items-center">
                     <h2 className="text-2xl font-bold text-slate-800">分析结果 (Result)</h2>
-                    <button 
-                        onClick={() => { setStatus('idle'); setFiles([]); setResult(null); }}
-                        className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-                    >
-                        开始新的分析
-                    </button>
+                    <div className="flex gap-3">
+                        <button 
+                            onClick={handleDownloadCSV}
+                            className="inline-flex items-center px-4 py-2 border border-slate-300 rounded-lg shadow-sm text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                            <svg className="-ml-1 mr-2 h-4 w-4 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            下载 CSV
+                        </button>
+                        <button 
+                            onClick={() => { setStatus('idle'); setFiles([]); setResult(null); }}
+                            className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                            开始新的分析
+                        </button>
+                    </div>
                 </div>
                 <Dashboard data={result} />
              </div>

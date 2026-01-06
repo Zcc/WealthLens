@@ -30,6 +30,36 @@ export const Dashboard: React.FC<DashboardProps> = ({ data }) => {
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
   }, [data]);
 
+  // Group assets by macro category for the table
+  const groupedAssets = useMemo(() => {
+    const groups: Record<string, typeof data.breakdown> = {};
+    data.breakdown.forEach(item => {
+      if (!groups[item.macroCategory]) {
+        groups[item.macroCategory] = [];
+      }
+      groups[item.macroCategory].push(item);
+    });
+    return groups;
+  }, [data.breakdown]);
+
+  // Sort categories: Liquidity -> Stable -> Investment -> Risk -> Others
+  const sortedCategories = useMemo(() => {
+      const order = [
+          MacroCategory.LIQUIDITY, 
+          MacroCategory.STABLE, 
+          MacroCategory.INVESTMENT, 
+          MacroCategory.RISK
+      ];
+      return Object.keys(groupedAssets).sort((a, b) => {
+          const indexA = order.indexOf(a as MacroCategory);
+          const indexB = order.indexOf(b as MacroCategory);
+          // If not found in order (e.g. unexpected category), put at end
+          const valA = indexA === -1 ? 999 : indexA;
+          const valB = indexB === -1 ? 999 : indexB;
+          return valA - valB;
+      });
+  }, [groupedAssets]);
+
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(val);
   };
@@ -129,30 +159,42 @@ export const Dashboard: React.FC<DashboardProps> = ({ data }) => {
             <thead className="bg-slate-50/50 text-slate-500 font-medium">
               <tr>
                 <th className="px-6 py-4">资产详情</th>
-                <th className="px-6 py-4">宏观分类</th>
                 <th className="px-6 py-4">具体类型</th>
                 <th className="px-6 py-4 text-right">折合人民币</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
-              {data.breakdown.map((item, index) => (
-                <tr key={index} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="font-bold text-slate-800">{item.name}</div>
-                    <div className="text-xs text-slate-400 mt-0.5">{item.originalAmount.toLocaleString()} {item.currency} · {item.description}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs font-medium">{item.macroCategory}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-slate-500">{item.type}</span>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="font-bold text-slate-900">{formatCurrency(item.convertedAmountCNY)}</div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+            
+            {sortedCategories.map(category => (
+                <tbody key={category} className="divide-y divide-slate-50 border-b border-slate-100 last:border-0">
+                    <tr className="bg-slate-50/30">
+                        <td colSpan={3} className="px-6 py-2 text-xs font-bold text-blue-600 uppercase tracking-wider bg-blue-50/50">
+                            {category}
+                        </td>
+                    </tr>
+                    {groupedAssets[category].map((item, index) => (
+                        <tr key={index} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-6 py-4">
+                                <div className="font-bold text-slate-800">{item.name}</div>
+                                <div className="text-xs text-slate-400 mt-0.5">{item.originalAmount.toLocaleString()} {item.currency} · {item.description}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                    ${item.type === '股票' ? 'bg-blue-100 text-blue-700' : ''}
+                                    ${item.type === '现金与活期' ? 'bg-green-100 text-green-700' : ''}
+                                    ${item.type === '理财/基金' ? 'bg-purple-100 text-purple-700' : ''}
+                                    ${item.type === '黄金/贵金属' ? 'bg-yellow-100 text-yellow-700' : ''}
+                                    ${['股票', '现金与活期', '理财/基金', '黄金/贵金属'].indexOf(item.type) === -1 ? 'bg-slate-100 text-slate-600' : ''}
+                                `}>
+                                    {item.type}
+                                </span>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                                <div className="font-bold text-slate-900">{formatCurrency(item.convertedAmountCNY)}</div>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            ))}
           </table>
         </div>
       </div>
