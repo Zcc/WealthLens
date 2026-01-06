@@ -2,13 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import { analyzeFinancialScreenshots } from './services/gemini.ts';
 import { AssetAnalysisResult, ProcessingStatus } from './types.ts';
 import { Dashboard } from './components/Dashboard.tsx';
+import html2canvas from 'html2canvas';
 
 // Icons
 const UploadIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
-);
-const Spinner = () => (
-  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
 );
 const MoonIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
@@ -16,12 +14,16 @@ const MoonIcon = () => (
 const SunIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
 );
+const ImageDownloadIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+);
 
 export default function App() {
   const [status, setStatus] = useState<ProcessingStatus>('idle');
   const [files, setFiles] = useState<File[]>([]);
   const [result, setResult] = useState<AssetAnalysisResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isExportingImage, setIsExportingImage] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') === 'dark' || 
@@ -31,6 +33,7 @@ export default function App() {
   });
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const reportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -97,10 +100,40 @@ export default function App() {
     document.body.removeChild(link);
   };
 
+  const handleDownloadImage = async () => {
+    if (!reportRef.current || isExportingImage) return;
+    
+    setIsExportingImage(true);
+    try {
+      const canvas = await html2canvas(reportRef.current, {
+        useCORS: true,
+        scale: 2, // Higher resolution
+        backgroundColor: isDarkMode ? '#020617' : '#f8fafc', // Match bg-slate-950 or bg-slate-50
+        logging: false,
+        onclone: (clonedDoc) => {
+          // Hide elements that shouldn't be in the screenshot if needed
+          const header = clonedDoc.querySelector('header');
+          if (header) header.style.display = 'none';
+        }
+      });
+      
+      const image = canvas.toDataURL('image/png', 1.0);
+      const link = document.createElement('a');
+      link.download = `wealth_report_${new Date().toISOString().slice(0,10)}.png`;
+      link.href = image;
+      link.click();
+    } catch (err) {
+      console.error('Failed to export image:', err);
+      alert('图片导出失败，请重试');
+    } finally {
+      setIsExportingImage(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300 pb-20">
       {/* Header */}
-      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10 transition-colors duration-300">
+      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-20 transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="bg-blue-600 rounded-lg p-1.5 shadow-sm shadow-blue-500/20">
@@ -118,8 +151,8 @@ export default function App() {
             >
               {isDarkMode ? <SunIcon /> : <MoonIcon />}
             </button>
-            <div className="text-sm text-slate-500 dark:text-slate-400 hidden sm:block">
-              AI 驱动的资产整合工具
+            <div className="text-sm text-slate-500 dark:text-slate-400 hidden sm:block font-medium">
+              AI 驱动的个人资产专家
             </div>
           </div>
         </div>
@@ -158,8 +191,8 @@ export default function App() {
                         <p className="text-slate-900 dark:text-slate-100 font-medium text-lg">
                             {files.length > 0 ? `已选择 ${files.length} 张图片` : "点击上传截图"}
                         </p>
-                        <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">
-                            支持 JPG, PNG (最大 10MB)
+                        <p className="text-slate-500 dark:text-slate-400 text-sm mt-2 font-medium">
+                            支持 JPG, PNG (单张最大 10MB)
                         </p>
                     </div>
 
@@ -167,22 +200,23 @@ export default function App() {
                         <div className="mt-6 flex flex-col gap-3">
                             <div className="flex flex-wrap gap-2 justify-center">
                                 {files.slice(0, 5).map((f, i) => (
-                                    <span key={i} className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs rounded-full truncate max-w-[150px]">
+                                    <span key={i} className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs rounded-full truncate max-w-[150px] font-medium border border-slate-200 dark:border-slate-700">
                                         {f.name}
                                     </span>
                                 ))}
-                                {files.length > 5 && <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs rounded-full">+{files.length - 5} 更多</span>}
+                                {files.length > 5 && <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs rounded-full border border-slate-200 dark:border-slate-700">+{files.length - 5} 更多</span>}
                             </div>
                             <button
                                 onClick={handleAnalyze}
-                                className="w-full bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-md hover:shadow-lg"
+                                className="w-full bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-[1.01] active:scale-[0.99] shadow-md hover:shadow-lg flex items-center justify-center gap-2"
                             >
-                                开始分析
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                开始 AI 深度分析
                             </button>
                         </div>
                     )}
                      {errorMsg && (
-                        <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg text-sm border border-red-100 dark:border-red-900/50">
+                        <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg text-sm border border-red-100 dark:border-red-900/50 font-medium">
                             {errorMsg}
                         </div>
                     )}
@@ -202,7 +236,7 @@ export default function App() {
                     </div>
 
                     <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-3">正在智能分析您的资产...</h3>
-                    <p className="text-slate-500 dark:text-slate-400 text-base mb-8 max-w-md mx-auto leading-relaxed">
+                    <p className="text-slate-500 dark:text-slate-400 text-base mb-8 max-w-md mx-auto leading-relaxed font-medium">
                         AI 正在处理 <span className="font-semibold text-blue-600 dark:text-blue-400">{files.length}</span> 张截图，提取账户余额并进行汇率换算。<br/>请耐心等待，通常需要 10-30 秒。
                     </p>
 
@@ -234,12 +268,12 @@ export default function App() {
         {/* Results View */}
         {status === 'complete' && result && (
              <div className="space-y-6">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <h2 className="text-2xl font-bold text-slate-800 dark:text-white">分析结果 (Result)</h2>
-                    <div className="flex flex-wrap gap-3">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800 mb-2">
+                    <h2 className="text-xl font-bold text-slate-800 dark:text-white">分析结果 (Analysis Summary)</h2>
+                    <div className="flex flex-wrap gap-2">
                         <button 
                             onClick={handleDownloadCSV}
-                            className="inline-flex items-center px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg shadow-sm text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none transition-colors"
+                            className="inline-flex items-center px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none transition-all active:scale-95"
                         >
                             <svg className="-ml-1 mr-2 h-4 w-4 text-slate-500 dark:text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -247,14 +281,28 @@ export default function App() {
                             下载 CSV
                         </button>
                         <button 
+                            onClick={handleDownloadImage}
+                            disabled={isExportingImage}
+                            className="inline-flex items-center px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none transition-all active:scale-95 disabled:opacity-50"
+                        >
+                            {isExportingImage ? (
+                                <div className="animate-spin mr-2 h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                            ) : (
+                                <span className="mr-2 text-slate-500 dark:text-slate-400"><ImageDownloadIcon /></span>
+                            )}
+                            下载报告图片
+                        </button>
+                        <button 
                             onClick={() => { setStatus('idle'); setFiles([]); setResult(null); }}
-                            className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 focus:outline-none transition-colors"
+                            className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 focus:outline-none transition-all active:scale-95"
                         >
                             重新分析
                         </button>
                     </div>
                 </div>
-                <Dashboard data={result} />
+                <div ref={reportRef} className="rounded-2xl overflow-hidden p-1">
+                   <Dashboard data={result} />
+                </div>
              </div>
         )}
       </main>
