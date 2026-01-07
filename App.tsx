@@ -10,9 +10,10 @@ const UploadIcon = () => (
 );
 const MoonIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>;
 const SunIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>;
+const SettingsIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 1-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73v.18a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>;
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'upload' | 'history' | 'privacy'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'history' | 'privacy' | 'settings'>('upload');
   const [status, setStatus] = useState<ProcessingStatus>('idle');
   const [files, setFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -20,7 +21,11 @@ export default function App() {
   const [history, setHistory] = useState<AssetAnalysisResult[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
-  // 新增进度相关状态
+  // Settings State
+  const [customApiKey, setCustomApiKey] = useState('');
+  const [tempApiKey, setTempApiKey] = useState('');
+
+  // Progress State
   const [progress, setProgress] = useState(0);
   const [loadingText, setLoadingText] = useState('准备分析...');
   const [loadingSubText, setLoadingSubText] = useState('正在初始化 AI 引擎');
@@ -39,6 +44,11 @@ export default function App() {
     if (saved) {
       try { setHistory(JSON.parse(saved)); } catch(e) { console.error(e); }
     }
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) {
+      setCustomApiKey(savedKey);
+      setTempApiKey(savedKey);
+    }
   }, []);
 
   useEffect(() => {
@@ -47,6 +57,18 @@ export default function App() {
   }, [isDarkMode]);
 
   const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
+
+  const saveApiKey = () => {
+    if (tempApiKey.trim()) {
+      localStorage.setItem('gemini_api_key', tempApiKey.trim());
+      setCustomApiKey(tempApiKey.trim());
+      alert('API Key 已保存');
+    } else {
+      localStorage.removeItem('gemini_api_key');
+      setCustomApiKey('');
+      alert('已清除自定义 API Key，将使用系统默认配额。');
+    }
+  };
 
   const handleFileSelection = (newFiles: FileList | null) => {
     if (!newFiles) return;
@@ -119,7 +141,8 @@ export default function App() {
     }, 1500);
 
     try {
-      const data = await analyzeFinancialScreenshots(files);
+      // 传入 customApiKey
+      const data = await analyzeFinancialScreenshots(files, customApiKey);
       clearInterval(timer);
       setProgress(100);
       setResult(data);
@@ -165,7 +188,10 @@ export default function App() {
                ))}
             </nav>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setActiveTab('settings')} className={`p-2 rounded-lg hover:shadow-inner transition-all ${activeTab === 'settings' ? 'bg-blue-100 text-blue-600 dark:bg-slate-800 dark:text-blue-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
+              <SettingsIcon />
+            </button>
             <button onClick={toggleDarkMode} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:shadow-inner transition-all">
               {isDarkMode ? <SunIcon /> : <MoonIcon />}
             </button>
@@ -378,6 +404,52 @@ export default function App() {
                      <li>如有疑虑，可随时通过“清空历史”功能移除本地存储的所有数据</li>
                    </ul>
                 </section>
+             </div>
+          </div>
+        )}
+
+        {activeTab === 'settings' && (
+          <div className="max-w-2xl mx-auto space-y-8 animate-fade-in">
+             <div className="text-center">
+                <div className="inline-block p-4 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full mb-4">
+                  <SettingsIcon />
+                </div>
+                <h2 className="text-3xl font-black">应用设置</h2>
+                <p className="text-slate-500 dark:text-slate-400 mt-2">自定义 AI 分析引擎的配置</p>
+             </div>
+
+             <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-6">
+                <div className="space-y-4">
+                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">自定义 Google Gemini API Key</label>
+                   <input 
+                     type="password" 
+                     value={tempApiKey}
+                     onChange={(e) => setTempApiKey(e.target.value)}
+                     placeholder="sk-..."
+                     className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                   />
+                   <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                     默认情况下，应用使用系统内置的共享配额。如果您有自己的 Google Gemini API Key（推荐，速度更快且无配额限制），请在此填入。
+                     <br/>Key 仅保存在您的本地浏览器缓存中，不会被上传。
+                   </p>
+                </div>
+                
+                <div className="pt-4 flex gap-4">
+                   <button 
+                     onClick={saveApiKey}
+                     className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-500/20"
+                   >
+                     保存配置
+                   </button>
+                   {customApiKey && (
+                     <button 
+                       onClick={() => { setTempApiKey(''); localStorage.removeItem('gemini_api_key'); setCustomApiKey(''); alert('已恢复默认配置'); }}
+                       className="px-6 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-rose-500 font-bold rounded-xl hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all"
+                     >
+                       清除
+                     </button>
+                   )}
+                </div>
              </div>
           </div>
         )}

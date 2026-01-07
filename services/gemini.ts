@@ -18,13 +18,15 @@ const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: s
   });
 };
 
-export const analyzeFinancialScreenshots = async (files: File[]): Promise<AssetAnalysisResult> => {
-  // 这里的 process.env.API_KEY 由环境自动注入
-  if (!process.env.API_KEY) {
-    throw new Error("API Key 缺失。请确保在环境设置中配置了有效的 API_KEY。");
+export const analyzeFinancialScreenshots = async (files: File[], customApiKey?: string): Promise<AssetAnalysisResult> => {
+  // 优先使用用户提供的 Key，否则使用环境变量中的 Key
+  const apiKey = customApiKey || process.env.API_KEY;
+
+  if (!apiKey) {
+    throw new Error("API Key 缺失。请在设置中配置您的 Key，或确保环境设置了默认 API_KEY。");
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey });
   const imageParts = await Promise.all(files.map(fileToGenerativePart));
 
   const prompt = `
