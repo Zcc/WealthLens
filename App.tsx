@@ -317,97 +317,6 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'history' && (
-          <div className="space-y-8 animate-fade-in">
-             <div className="flex justify-between items-end">
-                <div>
-                  <h2 className="text-3xl font-black">历史资产趋势</h2>
-                  <p className="text-slate-500 font-medium">通过快照记录财富增长轨迹</p>
-                </div>
-                <button onClick={() => { if(confirm('确定清空所有历史快照吗？')) { setHistory([]); localStorage.removeItem('wealth_history'); } }} className="text-xs font-bold text-rose-500 hover:underline">清空记录</button>
-             </div>
-
-             {history.length > 1 ? (
-               <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl shadow-sm border dark:border-slate-800">
-                  <h3 className="text-sm font-bold text-slate-400 mb-6 uppercase tracking-widest">总资产变动曲线</h3>
-                  <div className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={trendData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDarkMode ? '#334155' : '#f1f5f9'} />
-                        <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11}} />
-                        <YAxis hide />
-                        <ChartTooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-                        <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={4} dot={{r: 4, fill: '#3b82f6'}} activeDot={{r: 6}} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-               </div>
-             ) : history.length === 0 ? (
-                <div className="py-20 text-center text-slate-400 bg-white dark:bg-slate-900 rounded-3xl border border-dashed dark:border-slate-800">
-                  暂无历史记录，开始第一次分析吧！
-                </div>
-             ) : (
-                <div className="p-10 text-center text-slate-500 bg-blue-50 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-800/50">
-                   快照数据过少，无法生成趋势。继续上传新截图以追踪变化。
-                </div>
-             )}
-
-             <div className="space-y-4">
-                <h3 className="text-lg font-bold">时间轴快照</h3>
-                <div className="grid gap-4">
-                  {history.map((h) => (
-                    <div key={h.id} className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between hover:border-blue-200 transition-all group">
-                       <div className="flex items-center gap-4">
-                         <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/40 rounded-xl flex items-center justify-center text-blue-600 font-bold text-xs text-center">
-                           {new Date(h.timestamp).getDate()}<br/>{new Date(h.timestamp).getMonth() + 1}月
-                         </div>
-                         <div>
-                            <div className="font-bold">{new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(h.totalNetWorthCNY)}</div>
-                            <div className="text-xs text-slate-400">{h.breakdown.length} 个资产项 · {h.riskMetrics.riskAlerts.length} 条风险提示</div>
-                         </div>
-                       </div>
-                       <button onClick={() => { setResult(h); setStatus('complete'); setActiveTab('upload'); }} className="text-sm font-bold text-blue-600 hover:text-blue-800 transition-colors">查看详情 →</button>
-                    </div>
-                  ))}
-                </div>
-             </div>
-          </div>
-        )}
-
-        {activeTab === 'privacy' && (
-          <div className="max-w-2xl mx-auto space-y-8 animate-fade-in">
-             <div className="text-center">
-                <div className="inline-block p-4 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-500 rounded-full mb-4">
-                  <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                </div>
-                <h2 className="text-3xl font-black">隐私与安全说明</h2>
-             </div>
-
-             <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-sm border dark:border-slate-800 space-y-6">
-                <section>
-                  <h3 className="text-lg font-bold mb-2">数据处理原则</h3>
-                  <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
-                    本应用遵循“隐私优先”原则。上传的截图仅用于前端解析，识别后的结构化数据存储在您的浏览器本地（LocalStorage），图片文件本身不会存储在任何服务器。
-                  </p>
-                </section>
-                <section>
-                   <h3 className="text-lg font-bold mb-2">关于 Gemini AI 分析</h3>
-                   <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
-                     当您发起分析时，图片数据会通过安全链路发送至 Google Gemini API 节点进行 OCR 和语义分析。这是为了提供高精度的币种转换和风险建议。分析过程不包含对卡号、身份证号等敏感信息的针对性抓取。
-                   </p>
-                </section>
-                <section>
-                   <h3 className="text-lg font-bold mb-2">建议的安全操作</h3>
-                   <ul className="text-sm text-slate-600 dark:text-slate-400 list-disc list-inside space-y-2">
-                     <li>截屏前请遮挡完整的卡号或账户名</li>
-                     <li>不要在公共网络环境下分析大额敏感截图</li>
-                     <li>如有疑虑，可随时通过“清空历史”功能移除本地存储的所有数据</li>
-                   </ul>
-                </section>
-             </div>
-          </div>
-        )}
-
         {activeTab === 'settings' && (
           <div className="max-w-2xl mx-auto space-y-8 animate-fade-in">
              <div className="text-center">
@@ -420,7 +329,12 @@ export default function App() {
 
              <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-6">
                 <div className="space-y-4">
-                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">自定义 Google Gemini API Key</label>
+                   <div className="flex justify-between items-center">
+                       <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">自定义 Google Gemini API Key</label>
+                       <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
+                         获取 Key <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                       </a>
+                   </div>
                    <input 
                      type="password" 
                      value={tempApiKey}
