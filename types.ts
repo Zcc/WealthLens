@@ -1,3 +1,4 @@
+
 export enum AssetType {
   CASH = '现金与活期',
   STOCK = '股票',
@@ -13,6 +14,8 @@ export enum MacroCategory {
   RISK = '风险性资产',
   STABLE = '稳健型资产'
 }
+
+export type AIProvider = 'gemini' | 'openai';
 
 export interface AssetItem {
   name: string;

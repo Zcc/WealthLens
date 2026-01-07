@@ -53,7 +53,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ data }) => {
       const canvas = await html2canvas(dashboardRef.current, {
         scale: 2, // 提高清晰度
         useCORS: true,
-        backgroundColor: isDarkMode ? '#020617' : '#f8fafc',
+        backgroundColor: '#ffffff', // 强制使用白底
       });
       const image = canvas.toDataURL("image/png");
       const link = document.createElement("a");

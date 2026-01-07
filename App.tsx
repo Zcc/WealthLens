@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { analyzeFinancialScreenshots } from './services/gemini.ts';
-import { AssetAnalysisResult, ProcessingStatus } from './types.ts';
+import { AssetAnalysisResult, ProcessingStatus, AIProvider } from './types.ts';
 import { Dashboard } from './components/Dashboard.tsx';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 
@@ -21,9 +21,28 @@ export default function App() {
   const [history, setHistory] = useState<AssetAnalysisResult[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
-  // Settings State
+  // Settings State - General
+  const [provider, setProvider] = useState<AIProvider>('gemini');
+  
+  // Settings State - Main (Logic/Gemini)
   const [customApiKey, setCustomApiKey] = useState('');
   const [tempApiKey, setTempApiKey] = useState('');
+  
+  const [customBaseUrl, setCustomBaseUrl] = useState('');
+  const [tempBaseUrl, setTempBaseUrl] = useState('');
+
+  const [customModel, setCustomModel] = useState('');
+  const [tempModel, setTempModel] = useState('');
+
+  // Settings State - Vision (Optional Separate)
+  const [customVisionModel, setCustomVisionModel] = useState('');
+  const [tempVisionModel, setTempVisionModel] = useState('');
+
+  const [customVisionApiKey, setCustomVisionApiKey] = useState('');
+  const [tempVisionApiKey, setTempVisionApiKey] = useState('');
+
+  const [customVisionBaseUrl, setCustomVisionBaseUrl] = useState('');
+  const [tempVisionBaseUrl, setTempVisionBaseUrl] = useState('');
 
   // Progress State
   const [progress, setProgress] = useState(0);
@@ -44,11 +63,29 @@ export default function App() {
     if (saved) {
       try { setHistory(JSON.parse(saved)); } catch(e) { console.error(e); }
     }
+    
+    // Load settings
+    const savedProvider = localStorage.getItem('ai_provider') as AIProvider;
+    if (savedProvider) setProvider(savedProvider);
+
     const savedKey = localStorage.getItem('gemini_api_key');
-    if (savedKey) {
-      setCustomApiKey(savedKey);
-      setTempApiKey(savedKey);
-    }
+    if (savedKey) { setCustomApiKey(savedKey); setTempApiKey(savedKey); }
+    
+    const savedUrl = localStorage.getItem('gemini_base_url');
+    if (savedUrl) { setCustomBaseUrl(savedUrl); setTempBaseUrl(savedUrl); }
+
+    const savedModel = localStorage.getItem('openai_model_name');
+    if (savedModel) { setCustomModel(savedModel); setTempModel(savedModel); }
+
+    const savedVisionModel = localStorage.getItem('openai_vision_model');
+    if (savedVisionModel) { setCustomVisionModel(savedVisionModel); setTempVisionModel(savedVisionModel); }
+
+    const savedVisionKey = localStorage.getItem('openai_vision_api_key');
+    if (savedVisionKey) { setCustomVisionApiKey(savedVisionKey); setTempVisionApiKey(savedVisionKey); }
+
+    const savedVisionUrl = localStorage.getItem('openai_vision_base_url');
+    if (savedVisionUrl) { setCustomVisionBaseUrl(savedVisionUrl); setTempVisionBaseUrl(savedVisionUrl); }
+
   }, []);
 
   useEffect(() => {
@@ -58,16 +95,49 @@ export default function App() {
 
   const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
 
-  const saveApiKey = () => {
-    if (tempApiKey.trim()) {
-      localStorage.setItem('gemini_api_key', tempApiKey.trim());
-      setCustomApiKey(tempApiKey.trim());
-      alert('API Key 已保存');
-    } else {
-      localStorage.removeItem('gemini_api_key');
-      setCustomApiKey('');
-      alert('已清除自定义 API Key，将使用系统默认配额。');
-    }
+  const saveConfiguration = () => {
+    localStorage.setItem('ai_provider', provider);
+
+    // Helper to save/clear
+    const sync = (key: string, val: string, setter: (v: string) => void) => {
+      if (val.trim()) {
+        localStorage.setItem(key, val.trim());
+        setter(val.trim());
+      } else {
+        localStorage.removeItem(key);
+        setter('');
+      }
+    };
+
+    sync('gemini_api_key', tempApiKey, setCustomApiKey);
+    sync('gemini_base_url', tempBaseUrl, setCustomBaseUrl);
+    sync('openai_model_name', tempModel, setCustomModel);
+    
+    // Vision Settings
+    sync('openai_vision_model', tempVisionModel, setCustomVisionModel);
+    sync('openai_vision_api_key', tempVisionApiKey, setCustomVisionApiKey);
+    sync('openai_vision_base_url', tempVisionBaseUrl, setCustomVisionBaseUrl);
+
+    alert('配置已保存');
+  };
+
+  const resetConfiguration = () => {
+    setTempApiKey(''); setTempBaseUrl(''); setTempModel('');
+    setTempVisionModel(''); setTempVisionApiKey(''); setTempVisionBaseUrl('');
+    setProvider('gemini');
+    
+    localStorage.removeItem('ai_provider');
+    localStorage.removeItem('gemini_api_key'); 
+    localStorage.removeItem('gemini_base_url');
+    localStorage.removeItem('openai_model_name');
+    localStorage.removeItem('openai_vision_model');
+    localStorage.removeItem('openai_vision_api_key');
+    localStorage.removeItem('openai_vision_base_url');
+    
+    setCustomApiKey(''); setCustomBaseUrl(''); setCustomModel('');
+    setCustomVisionModel(''); setCustomVisionApiKey(''); setCustomVisionBaseUrl('');
+    
+    alert('已恢复默认配置 (Gemini)');
   };
 
   const handleFileSelection = (newFiles: FileList | null) => {
@@ -114,18 +184,17 @@ export default function App() {
     setProgress(5);
     setLoadingText('正在分析资产...');
 
-    // 模拟进度的定时器，让用户感知到动作
+    // 模拟进度的定时器
     let currentStep = 0;
     const steps = [
-      { p: 10, text: '准备图像数据...', sub: '正在进行 Base64 安全编码' },
+      { p: 10, text: '准备图像数据...', sub: '正在进行 Base64 编码与格式化' },
       ...files.map((f, i) => ({ 
         p: 15 + ((i + 1) / files.length) * 50, 
         text: `正在扫描第 ${i + 1}/${files.length} 张截图`, 
-        sub: `提取关键信息: ${f.name.length > 20 ? f.name.substring(0, 17) + '...' : f.name}` 
+        sub: `AI 视觉分析: ${f.name}` 
       })),
-      { p: 75, text: '正在跨机构对账...', sub: '识别重复项目并转换币种' },
-      { p: 85, text: '正在进行风险量化...', sub: '计算集中度与现金比例' },
-      { p: 92, text: '生成专家建议...', sub: 'AI 正在分析资产结构优化方案' }
+      { p: 80, text: '正在跨机构对账...', sub: '提取数据并进行结构化分析' },
+      { p: 90, text: '生成全景报告...', sub: '计算风险指标与资产建议' }
     ];
 
     const timer = setInterval(() => {
@@ -135,14 +204,21 @@ export default function App() {
         setLoadingSubText(steps[currentStep].sub);
         currentStep++;
       } else {
-        // 保持在 95% 左右直到真实结果返回
         setProgress(prev => Math.min(prev + 0.5, 98));
       }
     }, 1500);
 
     try {
-      // 传入 customApiKey
-      const data = await analyzeFinancialScreenshots(files, customApiKey);
+      const data = await analyzeFinancialScreenshots(files, {
+        provider,
+        apiKey: customApiKey,
+        baseUrl: customBaseUrl,
+        modelName: customModel,
+        
+        visionModelName: customVisionModel,
+        visionApiKey: customVisionApiKey,
+        visionBaseUrl: customVisionBaseUrl
+      });
       clearInterval(timer);
       setProgress(100);
       setResult(data);
@@ -150,23 +226,15 @@ export default function App() {
       setHistory(newHistory);
       localStorage.setItem('wealth_history', JSON.stringify(newHistory));
       
-      // 延迟一下让用户看到 100% 状态
       setTimeout(() => {
         setStatus('complete');
       }, 500);
     } catch (err: any) {
       clearInterval(timer);
-      setErrorMsg(err.message || "分析失败，请检查网络或图片质量。");
+      setErrorMsg(err.message || "分析失败，请检查配置或网络。");
       setStatus('error');
     }
   };
-
-  const trendData = useMemo(() => {
-    return history.slice().reverse().map(h => ({
-      date: new Date(h.timestamp).toLocaleDateString(),
-      value: h.totalNetWorthCNY
-    }));
-  }, [history]);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300 pb-20">
@@ -242,7 +310,7 @@ export default function App() {
                 
                 <div className="flex items-center justify-center gap-2 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
                    <svg className="w-3 h-3 animate-pulse" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" /></svg>
-                   AI 分析通常需要 10-20 秒，请稍候
+                   分析通常需要 10-30 秒，取决于模型响应速度
                 </div>
               </div>
             ) : (
@@ -323,44 +391,154 @@ export default function App() {
                 <div className="inline-block p-4 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full mb-4">
                   <SettingsIcon />
                 </div>
-                <h2 className="text-3xl font-black">应用设置</h2>
-                <p className="text-slate-500 dark:text-slate-400 mt-2">自定义 AI 分析引擎的配置</p>
+                <h2 className="text-3xl font-black">AI 引擎配置</h2>
+                <p className="text-slate-500 dark:text-slate-400 mt-2">自定义分析使用的模型服务</p>
              </div>
 
-             <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-6">
-                <div className="space-y-4">
-                   <div className="flex justify-between items-center">
-                       <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">自定义 Google Gemini API Key</label>
-                       <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
-                         获取 Key <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                       </a>
-                   </div>
-                   <input 
-                     type="password" 
-                     value={tempApiKey}
-                     onChange={(e) => setTempApiKey(e.target.value)}
-                     placeholder="sk-..."
-                     className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                   />
-                   <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                     默认情况下，应用使用系统内置的共享配额。如果您有自己的 Google Gemini API Key（推荐，速度更快且无配额限制），请在此填入。
-                     <br/>Key 仅保存在您的本地浏览器缓存中，不会被上传。
-                   </p>
-                </div>
+             <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-8">
                 
-                <div className="pt-4 flex gap-4">
+                {/* Provider Selection */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">AI 提供商</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button 
+                      onClick={() => setProvider('gemini')}
+                      className={`px-4 py-3 rounded-xl border font-bold text-sm transition-all flex items-center justify-center gap-2 ${provider === 'gemini' ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-500/30' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'}`}
+                    >
+                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                      Google Gemini
+                    </button>
+                    <button 
+                      onClick={() => setProvider('openai')}
+                      className={`px-4 py-3 rounded-xl border font-bold text-sm transition-all flex items-center justify-center gap-2 ${provider === 'openai' ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-500/30' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'}`}
+                    >
+                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M20.2 13c0 .7-.1 1.4-.3 2.1l-2.4-1.4c.1-.2.2-.5.2-.7 0-1.1-.9-2-2-2s-2 .9-2 2 .9 2 2 2c.2 0 .5-.1.7-.2l1.4 2.4c-.7.2-1.4.3-2.1.3-3.3 0-6-2.7-6-6s2.7-6 6-6 6 2.7 6 6zM12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 18c-4.4 0-8-3.6-8-8s3.6-8 8-8 8 3.6 8 8-3.6 8-8 8z"/></svg>
+                      OpenAI / 开源模型
+                    </button>
+                  </div>
+                </div>
+
+                {/* --- Main Configuration Area --- */}
+                <div className="space-y-6">
+                    <div className="pb-2 border-b border-slate-100 dark:border-slate-800">
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                           {provider === 'gemini' ? "Gemini 配置" : "主模型配置 (逻辑推理)"}
+                        </h3>
+                        {provider === 'openai' && <p className="text-xs text-slate-500 mt-1">负责接收文本数据、执行分析逻辑并生成 JSON 报告。通常需要较强推理能力的模型（如 GPT-4, DeepSeek）。</p>}
+                    </div>
+
+                    {/* API Key */}
+                    <div className="space-y-3">
+                       <div className="flex justify-between items-center">
+                           <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">API Key {provider === 'openai' && <span className="text-rose-500">*</span>}</label>
+                           {provider === 'gemini' && (
+                             <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
+                               获取 Key <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                             </a>
+                           )}
+                       </div>
+                       <input 
+                         type="password" 
+                         value={tempApiKey}
+                         onChange={(e) => setTempApiKey(e.target.value)}
+                         placeholder={provider === 'gemini' ? "AIzaSy..." : "sk-..."}
+                         className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                       />
+                    </div>
+
+                    {/* Base URL */}
+                    <div className="space-y-3">
+                       <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                         Endpoint / Base URL
+                         {provider === 'openai' && <span className="text-rose-500 ml-1">*</span>}
+                         {provider === 'gemini' && <span className="text-slate-400 font-normal ml-1">(可选)</span>}
+                       </label>
+                       <input 
+                         type="text" 
+                         value={tempBaseUrl}
+                         onChange={(e) => setTempBaseUrl(e.target.value)}
+                         placeholder={provider === 'gemini' ? "https://my-proxy.com" : "例如: https://api.deepseek.com"}
+                         className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                       />
+                    </div>
+
+                    {/* Model Name */}
+                    <div className="space-y-3">
+                       <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                         {provider === 'gemini' ? "模型名称 (可选)" : "模型名称 (必填)"}
+                       </label>
+                       <input 
+                         type="text" 
+                         value={tempModel}
+                         onChange={(e) => setTempModel(e.target.value)}
+                         placeholder={provider === 'gemini' ? "gemini-3-pro-preview" : "deepseek-chat, qwen-max"}
+                         className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                       />
+                    </div>
+                </div>
+
+                {/* --- Optional Separate Vision Config (OpenAI Only) --- */}
+                {provider === 'openai' && (
+                    <div className="space-y-6 pt-6 border-t border-slate-200 dark:border-slate-700 animate-fade-in">
+                        <div className="pb-2">
+                             <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                               视觉模型配置 (可选)
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-1">
+                                若填写模型名称，系统将先使用此配置进行图片转文字 (OCR)，再将文字传给主模型分析。
+                                <br/>可用于 Ollama 本地部署 LLaVA (Vision) + 远程 DeepSeek (Logic) 的组合。
+                                <br/>若留空，则使用主模型直接处理图片。
+                            </p>
+                        </div>
+
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-3">
+                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">视觉模型名称</label>
+                                <input 
+                                   type="text" 
+                                   value={tempVisionModel}
+                                   onChange={(e) => setTempVisionModel(e.target.value)}
+                                   placeholder="llava, qwen-vl-max"
+                                   className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all"
+                                 />
+                            </div>
+                            <div className="space-y-3">
+                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">Vision API Key</label>
+                                <input 
+                                   type="password" 
+                                   value={tempVisionApiKey}
+                                   onChange={(e) => setTempVisionApiKey(e.target.value)}
+                                   placeholder="同主 Key (若留空)"
+                                   className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all"
+                                 />
+                            </div>
+                            <div className="space-y-3 md:col-span-2">
+                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">Vision Base URL</label>
+                                <input 
+                                   type="text" 
+                                   value={tempVisionBaseUrl}
+                                   onChange={(e) => setTempVisionBaseUrl(e.target.value)}
+                                   placeholder="同主 URL (若留空), 例如 http://localhost:11434"
+                                   className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all"
+                                 />
+                            </div>
+                         </div>
+                    </div>
+                )}
+                
+                <div className="pt-6 flex gap-4">
                    <button 
-                     onClick={saveApiKey}
+                     onClick={saveConfiguration}
                      className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-500/20"
                    >
                      保存配置
                    </button>
-                   {customApiKey && (
+                   {(customApiKey || customBaseUrl || customModel || customVisionModel) && (
                      <button 
-                       onClick={() => { setTempApiKey(''); localStorage.removeItem('gemini_api_key'); setCustomApiKey(''); alert('已恢复默认配置'); }}
+                       onClick={resetConfiguration}
                        className="px-6 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-rose-500 font-bold rounded-xl hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all"
                      >
-                       清除
+                       重置
                      </button>
                    )}
                 </div>
